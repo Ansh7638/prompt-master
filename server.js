@@ -1,846 +1,105 @@
 const http=require('http');
 const fs=require('fs');
 const path=require('path');
+const crypto=require('crypto');
 const WebSocket=require('ws');
 const PORT=process.env.PORT||10000;
+const DATA_DIR=path.join(__dirname,'data');
+const DATA_FILE=path.join(DATA_DIR,'profiles.json');
 const rooms=new Map();
-const QUESTION_BANK = [
-  {
-    "id": "R1-01",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "easy",
-    "question": "Which prompt gives the AI the clearest role?",
-    "options": [
-      "Tell me about space.",
-      "Act as an astronomy teacher for beginners.",
-      "Explain something interesting.",
-      "Write a long answer."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R1-02",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "easy",
-    "question": "You need feedback on a CV. Which role is most useful?",
-    "options": [
-      "Act as an experienced recruitment specialist.",
-      "Act as a chef.",
-      "Act as a travel blogger.",
-      "Act as a game show host."
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R1-03",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "medium",
-    "question": "Which role best fits a request to explain a bug to a beginner?",
-    "options": [
-      "A strict judge",
-      "A patient programming tutor",
-      "A sports commentator",
-      "A poet with no technical focus"
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R1-04",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "medium",
-    "question": "Which role would best help plan a low-cost family trip?",
-    "options": [
-      "Luxury brand designer",
-      "Budget-conscious travel planner",
-      "Film critic",
-      "Laboratory researcher"
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R1-05",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "hard",
-    "question": "A team needs a balanced review of a product launch. Which role is most suitable?",
-    "options": [
-      "A fan who loves the product",
-      "A skeptical competitor",
-      "A product strategist who weighs customer needs, risks, and evidence",
-      "A salesperson whose only goal is to praise it"
-    ],
-    "answer": 2
-  },
-  {
-    "id": "R1-06",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "easy",
-    "question": "What is the main purpose of adding a role to a prompt?",
-    "options": [
-      "To guarantee every fact is correct",
-      "To guide the AI's perspective and style",
-      "To make the prompt longer",
-      "To remove the need for details"
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R1-07",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "hard",
-    "question": "You want a science explanation for a 10-year-old without losing accuracy. Which role is best?",
-    "options": [
-      "A sensational news writer",
-      "A science educator skilled at age-appropriate explanations",
-      "A comedian who avoids facts",
-      "An academic who uses unexplained jargon"
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R1-08",
-    "round": 1,
-    "category": "Role",
-    "difficulty": "medium",
-    "question": "Which prompt role is most appropriate for checking whether a claim is supported by sources?",
-    "options": [
-      "Fact-checking editor",
-      "Fantasy novelist",
-      "Wedding planner",
-      "Interior decorator"
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R2-01",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "easy",
-    "question": "Which prompt states a clear requirement?",
-    "options": [
-      "Make it nice.",
-      "Write a 150-word product description for a reusable water bottle.",
-      "Do something useful.",
-      "Use your imagination."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R2-02",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "easy",
-    "question": "You ask for a study plan. Which extra requirement is most actionable?",
-    "options": [
-      "Make it perfect.",
-      "Include daily topics, practice time, and review sessions.",
-      "Make it impressive.",
-      "Use lots of detail."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R2-03",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "medium",
-    "question": "Which requirement best clarifies a comparison task?",
-    "options": [
-      "Compare these laptops somehow.",
-      "Compare price, battery life, weight, and repairability in a table.",
-      "Tell me everything.",
-      "Pick the coolest one."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R2-04",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "medium",
-    "question": "You need a professional email declining an invitation. What requirement matters most?",
-    "options": [
-      "Include a polite decline and a brief expression of thanks.",
-      "Make it mysterious.",
-      "Add unrelated background.",
-      "Use as many words as possible."
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R2-05",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "hard",
-    "question": "Which requirement makes a research summary easiest to verify?",
-    "options": [
-      "Make the summary insightful.",
-      "Separate established findings from uncertainties and cite sources for factual claims.",
-      "Sound confident.",
-      "Include advanced vocabulary."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R2-06",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "easy",
-    "question": "What is a requirement in a prompt?",
-    "options": [
-      "A specific thing the output must include or accomplish",
-      "A random fact about the user",
-      "A decorative emoji",
-      "A hidden scoring rule"
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R2-07",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "hard",
-    "question": "You want a beginner workout plan. Which set of requirements is most useful?",
-    "options": [
-      "Make it motivating.",
-      "Give a weekly schedule, exercise names, sets or duration, rest days, and beginner modifications.",
-      "Make it intense.",
-      "Mention fitness."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R2-08",
-    "round": 2,
-    "category": "Requirements",
-    "difficulty": "medium",
-    "question": "Which requirement best supports an accessible presentation?",
-    "options": [
-      "Use beautiful slides.",
-      "Provide concise slide titles, alt text suggestions, and high-contrast design guidance.",
-      "Make it modern.",
-      "Use more animations."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-01",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "easy",
-    "question": "Which is a clear constraint?",
-    "options": [
-      "Make it good.",
-      "Keep the answer under 100 words.",
-      "Be interesting.",
-      "Help me out."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-02",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "easy",
-    "question": "You need a meal plan but cannot eat peanuts. What should you add?",
-    "options": [
-      "Make it tasty.",
-      "Exclude peanuts and peanut-derived ingredients.",
-      "Use bright colors.",
-      "Make it exciting."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-03",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "medium",
-    "question": "Which constraint best fits a presentation for busy executives?",
-    "options": [
-      "Use no more than six slides and put the key recommendation first.",
-      "Make it powerful.",
-      "Include all possible details.",
-      "Use a dramatic story."
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R3-04",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "medium",
-    "question": "A user asks for a solution using only free tools. Which instruction is clearest?",
-    "options": [
-      "Keep it cheap.",
-      "Use only tools with a free plan; identify any feature limits or paid upgrades.",
-      "Use popular tools.",
-      "Avoid expensive-looking tools."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-05",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "hard",
-    "question": "Which constraint reduces the risk of made-up facts in a report?",
-    "options": [
-      "Write confidently.",
-      "If reliable evidence is unavailable, say so instead of inventing facts or citations.",
-      "Make the report persuasive.",
-      "Use formal language."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-06",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "easy",
-    "question": "How do constraints differ from requirements?",
-    "options": [
-      "Constraints set boundaries; requirements describe what to deliver.",
-      "They mean exactly the same thing.",
-      "Constraints are always optional.",
-      "Requirements only concern word count."
-    ],
-    "answer": 0
-  },
-  {
-    "id": "R3-07",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "hard",
-    "question": "You need a Python example for a class using no external libraries. Which constraint is best?",
-    "options": [
-      "Keep the code elegant.",
-      "Use only Python's standard library and explain how to run the example.",
-      "Make it advanced.",
-      "Include many features."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R3-08",
-    "round": 3,
-    "category": "Constraints",
-    "difficulty": "medium",
-    "question": "Which constraint is most useful for a spoiler-free movie review?",
-    "options": [
-      "Be entertaining.",
-      "Do not reveal plot twists or events beyond the film's premise.",
-      "Keep it positive.",
-      "Mention the cast."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-01",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "easy",
-    "question": "Which instruction asks the AI for a plan?",
-    "options": [
-      "Define photosynthesis.",
-      "Break the project into steps with a timeline and milestones.",
-      "Use a friendly tone.",
-      "Keep it short."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-02",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "easy",
-    "question": "You want to learn basic coding in a month. Which plan request is most useful?",
-    "options": [
-      "Tell me coding is fun.",
-      "Create a four-week schedule with practice tasks and weekly checkpoints.",
-      "List famous programmers.",
-      "Explain every programming language."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-03",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "medium",
-    "question": "Which project plan is easiest to follow?",
-    "options": [
-      "Do research, then build something.",
-      "List tasks in order, estimate durations, identify dependencies, and define completion criteria.",
-      "Work hard every day.",
-      "Start wherever seems best."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-04",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "medium",
-    "question": "A small business wants to launch a website. What should the plan include first?",
-    "options": [
-      "Buy every available tool.",
-      "Clarify goals, audience, content, budget, and launch deadline.",
-      "Choose random colors.",
-      "Write code immediately."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-05",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "hard",
-    "question": "A plan depends on receiving data from another team. What should a robust plan do?",
-    "options": [
-      "Ignore the dependency.",
-      "Identify the dependency, owner, due date, and a fallback if it is delayed.",
-      "Assume it arrives early.",
-      "Remove all milestones."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-06",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "easy",
-    "question": "What makes a plan more actionable?",
-    "options": [
-      "Vague encouragement",
-      "Specific steps, deadlines, and checkpoints",
-      "A long introduction",
-      "Unrelated background"
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-07",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "hard",
-    "question": "A project is behind schedule. Which plan request is most helpful?",
-    "options": [
-      "Tell the team to hurry.",
-      "Reassess remaining tasks, dependencies, critical milestones, and scope trade-offs; then propose a revised schedule.",
-      "Add more tasks.",
-      "Pretend the deadline has changed."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R4-08",
-    "round": 4,
-    "category": "Plan",
-    "difficulty": "medium",
-    "question": "Which plan best helps someone prepare for an exam in 10 days?",
-    "options": [
-      "Study everything.",
-      "Create a 10-day revision calendar that prioritizes weak topics, practice tests, and rest.",
-      "Read motivational quotes.",
-      "Study only the easiest topic."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-01",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "easy",
-    "question": "Which prompt combines a role and a clear requirement?",
-    "options": [
-      "Help with writing.",
-      "Act as an editor and rewrite this paragraph in 3 concise sentences.",
-      "Write something good.",
-      "Be creative."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-02",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "easy",
-    "question": "Which prompt has a clear audience and format?",
-    "options": [
-      "Explain budgeting.",
-      "Explain budgeting to a 14-year-old using five bullets and one simple example.",
-      "Make money easier.",
-      "Tell me useful things."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-03",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Choose the strongest prompt for planning a weekend trip.",
-    "options": [
-      "Plan a trip.",
-      "Act as a local travel planner. Suggest a two-day trip under ₹5,000, include travel time and free activities, and organize it by day.",
-      "Tell me about tourism.",
-      "Find the most luxurious places."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-04",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "A weak prompt says: 'Make my presentation better.' What is the most useful improvement?",
-    "options": [
-      "Make it amazing.",
-      "Specify the audience, purpose, slide limit, tone, and the kind of feedback wanted.",
-      "Add more words.",
-      "Ask for a professional result."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-05",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "Which prompt best requests a balanced product comparison?",
-    "options": [
-      "Tell me which phone is best.",
-      "Act as a neutral tech reviewer. Compare these phones on price, battery, camera, software support, and repairability in a table; note missing data and avoid assuming my priorities.",
-      "Praise the newest phone.",
-      "Give me a short answer with no details."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-06",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "You want AI help debugging code. Which prompt is most complete?",
-    "options": [
-      "Fix this.",
-      "Act as a debugging tutor. Explain the likely cause, show the smallest safe fix, preserve existing behavior, and ask for missing error details rather than guessing.",
-      "Rewrite the entire app.",
-      "Make it work better."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-07",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which prompt is best for creating a social media calendar?",
-    "options": [
-      "Give me posts.",
-      "Act as a social media planner. Create a 2-week calendar for a small bakery with post ideas, captions, formats, and a realistic posting frequency.",
-      "Make a viral campaign.",
-      "Write about food."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-08",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "A prompt asks for medical advice. Which addition is the most responsible?",
-    "options": [
-      "Sound certain.",
-      "Provide general information, avoid diagnosing, flag urgent warning signs, and recommend a qualified clinician for personal advice.",
-      "List every possible disease.",
-      "Skip any limitations."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-09",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which prompt best helps generate ideas while keeping them feasible?",
-    "options": [
-      "Give me 100 ideas.",
-      "Act as a practical brainstorming partner. Suggest 10 ideas for a school science fair using household materials, with estimated cost and difficulty for each.",
-      "Give me unusual ideas.",
-      "Make the ideas exciting."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-10",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "You need a summary of a long document for a decision meeting. Which prompt is strongest?",
-    "options": [
-      "Summarize this.",
-      "Act as an executive analyst. Summarize the decision, key evidence, risks, open questions, and recommended next steps in under 300 words; distinguish facts from assumptions.",
-      "Tell me the important parts.",
-      "Make it sound official."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-11",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which prompt best requests creative writing with clear boundaries?",
-    "options": [
-      "Write a story.",
-      "Write a mystery story for ages 10–12, under 800 words, set in a library, with three clues and a fair solution; avoid graphic violence.",
-      "Make it thrilling.",
-      "Write like a famous living author."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-12",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "An AI answer contains a statistic with no source. What is the best follow-up?",
-    "options": [
-      "Assume it is true.",
-      "Ask for a reliable source and date, request verification, and allow the answer to say the statistic cannot be confirmed.",
-      "Ask it to sound more confident.",
-      "Repeat the statistic in the report."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-13",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "easy",
-    "question": "What is the best first step when a prompt gives an unclear goal?",
-    "options": [
-      "Guess the goal.",
-      "Ask a focused clarifying question or state a reasonable assumption.",
-      "Write the longest possible answer.",
-      "Ignore the ambiguity."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-14",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "Which prompt best asks for a decision framework without handing over the decision?",
-    "options": [
-      "Choose for me.",
-      "Help me compare the options against my stated priorities, explain trade-offs and uncertainties, and leave the final choice to me.",
-      "Tell me the only correct answer.",
-      "Rank everything without reasons."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-15",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which is the best way to ask for a table?",
-    "options": [
-      "Organize it well.",
-      "Present the results in a table with columns for option, cost, benefit, drawback, and key uncertainty.",
-      "Make it readable.",
-      "Use clear formatting."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-16",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "A task has several steps and strict limits. What should a strong prompt do?",
-    "options": [
-      "Mention only the final goal.",
-      "State the goal, ordered steps, constraints, output format, and how success will be judged.",
-      "Use more adjectives.",
-      "Leave the method entirely implicit."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-17",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which prompt best supports learning instead of simply copying an answer?",
-    "options": [
-      "Give me the answer.",
-      "Act as a tutor: ask one guiding question at a time, offer hints before solutions, and check my understanding.",
-      "Solve everything instantly.",
-      "Use advanced terminology."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-18",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "Which prompt is most useful when the output must follow a specific format?",
-    "options": [
-      "Return the information neatly.",
-      "Return valid JSON with the keys title, summary, and three_actions; make three_actions an array of strings and include no extra commentary.",
-      "Use a structured answer.",
-      "Make it easy to parse."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-19",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "medium",
-    "question": "Which prompt best requests a practical business idea assessment?",
-    "options": [
-      "Is this idea good?",
-      "Act as a small-business advisor. Assess the target customer, likely costs, key risks, first validation experiment, and evidence still needed.",
-      "Tell me it will succeed.",
-      "Write a business plan for everything."
-    ],
-    "answer": 1
-  },
-  {
-    "id": "R5-20",
-    "round": 5,
-    "category": "Mixed",
-    "difficulty": "hard",
-    "question": "What should you do if a prompt's requirements conflict—for example, 'explain every detail in 20 words'?",
-    "options": [
-      "Ignore one requirement silently.",
-      "Ask which requirement matters more, or explain the trade-off and offer a concise alternative.",
-      "Use exactly 20 words regardless of usefulness.",
-      "Produce a very long answer."
-    ],
-    "answer": 1
-  }
-];
-
-const ROUND_RULES = [
-  { label:'1. EASY', allowed:['easy'] },
-  { label:'2. LEVEL UP', allowed:['easy','medium'] },
-  { label:'3. MEDIUM', allowed:['medium'] },
-  { label:'4. HARD', allowed:['medium','hard'] },
-  { label:'⭐ FINAL CHALLENGE', allowed:['hard'] }
-];
-function shuffle(a){return [...a].sort(()=>Math.random()-0.5)}
-function makeQuestions(){
-  return ROUND_RULES.map((rule,idx)=>{
-    let pool=QUESTION_BANK.filter(q=>rule.allowed.includes(q.difficulty));
-    // Mix categories rather than repeating one category throughout a match.
-    if(pool.length<5) pool=QUESTION_BANK;
-    return shuffle(pool).slice(0,5).map(q=>({
-      title:q.category,
-      badge:rule.label,
-      prompt:q.question,
-      opts:q.options,
-      ans:q.answer,
-      explanation:q.explanation||''
-    }));
-  });
-}
+const queue=[];
+let profiles={};
+try{fs.mkdirSync(DATA_DIR,{recursive:true});profiles=JSON.parse(fs.readFileSync(DATA_FILE,'utf8'))||{}}catch{profiles={}}
+function saveProfiles(){try{fs.mkdirSync(DATA_DIR,{recursive:true});fs.writeFileSync(DATA_FILE,JSON.stringify(profiles,null,2))}catch(e){console.error('profile save failed',e.message)}}
+const QUESTION_BANK=[
+['PM001','Prompting','easy','Which prompt gives the AI the clearest role?',['Tell me about space.','Act as an astronomy teacher for beginners.','Explain something interesting.','Write a long answer.'],1],
+['PM002','Prompting','easy','Which requirement is most actionable for a study plan?',['Make it perfect.','Include daily topics, practice time, and review sessions.','Make it impressive.','Use lots of detail.'],1],
+['PM003','Prompting','medium','Which constraint is clearest?',['Make it good.','Keep the answer under 100 words.','Be interesting.','Help me out.'],1],
+['PM004','Prompting','medium','Which prompt best requests a balanced comparison?',['Tell me which is best.','Compare price, benefits, drawbacks and uncertainty in a table.','Praise the newest option.','Give no details.'],1],
+['PM005','Prompting','hard','What should a strong multi-step prompt include?',['Only the final goal.','Goal, ordered steps, constraints, output format and success criteria.','More adjectives.','No method.'],1],
+['PM006','Funny','easy','If a prompt says “make me famous by Friday,” what is missing?',['A time machine.','A realistic goal and strategy.','More emojis.','A louder keyboard.'],1],
+['PM007','Funny','easy','Which AI request sounds most suspiciously like a lazy student?',['Teach me the topic.','Give me the answer and make it look like I studied.','Quiz me.','Explain my mistake.'],1],
+['PM008','Funny','medium','You ask AI to “write the perfect excuse for being late.” What should it probably do first?',['Invent a teleportation story.','Ask for context and avoid fabricating serious claims.','Blame aliens.','Write 5,000 words.'],1],
+['PM009','Funny','medium','What is the most dangerous prompt ingredient?',['Clear goals.','Confidently asking AI to guess missing facts.','A short sentence.','A numbered list.'],1],
+['PM010','Funny','hard','Your prompt says “be creative, but copy this exactly.” What is the issue?',['Too many commas.','The instructions conflict.','The prompt is too short.','It needs a password.'],1],
+['CE001','Competitive Exams','easy','Which Article of the Indian Constitution guarantees equality before law?',['Article 12','Article 14','Article 19','Article 21'],1],
+['CE002','Competitive Exams','easy','How many Fundamental Duties are currently listed in the Indian Constitution?',['10','11','12','9'],1],
+['CE003','Competitive Exams','moderate','Which body conducts elections to Parliament and State Legislatures in India?',['UPSC','Election Commission of India','Finance Commission','NITI Aayog'],1],
+['CE004','Competitive Exams','hard','The anti-defection provisions are contained in which Schedule?',['Eighth','Ninth','Tenth','Twelfth'],2],
+['CE005','Competitive Exams','easy','Who founded the Mauryan Empire?',['Ashoka','Chandragupta Maurya','Harsha','Samudragupta'],1],
+['CE006','Competitive Exams','easy','The Quit India Movement was launched in which year?',['1930','1942','1947','1950'],1],
+['CE007','Competitive Exams','moderate','The Arthashastra is traditionally associated with whom?',['Kautilya','Kalidasa','Banabhatta','Tulsidas'],0],
+['CE008','Competitive Exams','hard','The Permanent Settlement was introduced under which Governor-General?',['Wellesley','Cornwallis','Dalhousie','Curzon'],1],
+['CE009','Competitive Exams','easy','Which is the largest Indian state by area?',['Madhya Pradesh','Maharashtra','Rajasthan','Uttar Pradesh'],2],
+['CE010','Competitive Exams','easy','Which river is known as the “Sorrow of Bihar”?',['Ganga','Kosi','Godavari','Narmada'],1],
+['CE011','Competitive Exams','moderate','Black soil is particularly suitable for which crop?',['Tea','Cotton','Jute','Wheat'],1],
+['CE012','Competitive Exams','hard','Which Indian state has the longest coastline?',['Tamil Nadu','Andhra Pradesh','Gujarat','Maharashtra'],2],
+['CE013','Competitive Exams','easy','What is the SI unit of force?',['Joule','Watt','Newton','Pascal'],2],
+['CE014','Competitive Exams','easy','Which gas is most abundant in Earth’s atmosphere?',['Oxygen','Nitrogen','Carbon dioxide','Hydrogen'],1],
+['CE015','Competitive Exams','moderate','In typical eukaryotic cells, most genetic material is contained in the:',['Ribosome','Nucleus','Cell wall','Golgi apparatus'],1],
+['CE016','Competitive Exams','hard','The splitting of white light into its component colours by a prism is called:',['Reflection','Dispersion','Diffraction','Interference'],1],
+['CE017','Competitive Exams','easy','What is 15% of 200?',['20','25','30','35'],2],
+['CE018','Competitive Exams','moderate','A vehicle travels 180 km in 3 hours. What is its average speed?',['50 km/h','60 km/h','70 km/h','80 km/h'],1],
+['CE019','Competitive Exams','hard','Two numbers are in the ratio 3:5 and their sum is 64. What is the smaller number?',['18','24','30','40'],1],
+['CE020','Competitive Exams','easy','Find the next number: 2, 4, 8, 16, ?',['24','28','30','32'],3],
+['CE021','Competitive Exams','moderate','If CAT is coded as DBU, how is DOG coded using the same rule?',['EPH','EPG','FPH','DNG'],0],
+['CE022','Competitive Exams','hard','All roses are flowers. Some flowers fade quickly. Which conclusion is definitely true?',['All roses fade quickly.','Some roses fade quickly.','No roses fade quickly.','None of these follows.'],3],
+['CE023','Competitive Exams','easy','Choose the closest meaning of “abundant”.',['Rare','Plentiful','Tiny','Weak'],1],
+['CE024','Competitive Exams','moderate','Which spelling is correct?',['Accomodation','Accommodation','Acommodation','Accommadation'],1],
+['CE025','Competitive Exams','easy','Which device is primarily used to enter text into a computer?',['Monitor','Keyboard','Speaker','Projector'],1],
+['CE026','Competitive Exams','moderate','CPU stands for:',['Central Processing Unit','Computer Personal Unit','Central Program Utility','Control Processing User'],0],
+['CE027','Competitive Exams','moderate','Inflation generally refers to:',['A sustained rise in the general price level','A fall in all prices','A rise in unemployment only','A rise in exports only'],0],
+['CE028','Competitive Exams','hard','GDP avoids double counting mainly by focusing on:',['Final goods and services','All intermediate sales','Only imports','Only government spending'],0],
+['CE029','Competitive Exams','easy','What is the capital of India?',['Mumbai','New Delhi','Kolkata','Chennai'],1],
+['CE030','Competitive Exams','hard','The Reserve Bank of India is the country’s:',['Stock exchange','Tax authority','Central bank','Planning ministry'],2],
+['GK001','World Knowledge','easy','Which planet is known as the Red Planet?',['Earth','Mars','Jupiter','Venus'],1],
+['GK002','World Knowledge','easy','How many continents are commonly taught in the seven-continent model?',['5','6','7','8'],2],
+['GK003','World Knowledge','medium','Which ocean is the largest?',['Atlantic','Indian','Pacific','Arctic'],2],
+['SCI001','Science','easy','Which organ pumps blood through the human body?',['Lungs','Heart','Liver','Kidney'],1],
+['SCI002','Science','medium','Water boils at approximately what temperature at sea level?',['50°C','75°C','100°C','125°C'],2],
+['TECH001','Technology','easy','What does URL stand for?',['Uniform Resource Locator','Universal Reading Link','User Route Language','Unified Remote Login'],0],
+['HIS001','History','easy','The Taj Mahal was commissioned by which Mughal emperor?',['Akbar','Shah Jahan','Aurangzeb','Humayun'],1],
+['SPORT001','Sports','easy','How many players from one side are on the field in a standard football (soccer) team?',['9','10','11','12'],2],
+['FOOD001','Food','easy','Which ingredient is traditionally used to make hummus?',['Chickpeas','Rice','Potatoes','Corn'],0]
+].map(x=>({id:x[0],category:x[1],difficulty:x[2],question:x[3],options:x[4],answer:x[5]}));
+const MODES={
+ 'Classic Duel':{rounds:5,qPerRound:5,time:15},
+ 'Quick Match':{rounds:3,qPerRound:5,time:10},
+ 'Endless':{rounds:10,qPerRound:5,time:15},
+ 'Solo Practice':{rounds:5,qPerRound:5,time:30}
+};
+const CATEGORIES=['Mixed Quiz','Prompting','Funny','Competitive Exams','World Knowledge','Science','Technology','History','Sports','Food'];
+function uid(){return crypto.randomBytes(9).toString('hex')}
 function code(){let s='';const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';do{s='';for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)]}while(rooms.has(s));return s}
+function shuffle(a){return [...a].sort(()=>Math.random()-0.5)}
+function levelFor(xp){return Math.floor(xp/500)+1}
+function profileFor(name,accountId){const id=accountId||'guest_'+uid();if(!profiles[id])profiles[id]={id,name:String(name||'Player').slice(0,20),xp:0,wins:0,losses:0,games:0,streak:0,bestStreak:0,badges:[],missions:{games:0,correct:0},createdAt:Date.now()};return profiles[id]}
+function addProgress(p,correct,win){p.games++;p.missions.games++;if(correct)p.missions.correct++;p.xp+=correct?25:5;if(correct){p.streak++;p.bestStreak=Math.max(p.bestStreak,p.streak)}else p.streak=0;if(win)p.wins++;else p.losses++;const level=levelFor(p.xp);if(level>=5&&!p.badges.includes('Level 5'))p.badges.push('Level 5');if(p.missions.correct>=20&&!p.badges.includes('20 Correct'))p.badges.push('20 Correct');saveProfiles()}
+function poolFor(category){if(category&&category!=='Mixed Quiz')return QUESTION_BANK.filter(q=>q.category===category);return QUESTION_BANK}
+function makeQuestions(category,mode){const cfg=MODES[mode]||MODES['Classic Duel'];const pool=poolFor(category);const rules=[['easy'],['easy','medium'],['medium'],['medium','hard'],['hard'],['medium','hard'],['easy','hard'],['medium','hard'],['easy','medium','hard'],['hard']];let out=[];for(let r=0;r<cfg.rounds;r++){let allowed=rules[Math.min(r,rules.length-1)];let eligible=pool.filter(q=>allowed.includes(q.difficulty));if(eligible.length<cfg.qPerRound)eligible=pool;let used=[];for(let i=0;i<cfg.qPerRound;i++){if(!eligible.length)break;let q=eligible.find(x=>!used.includes(x.id))||eligible[i%eligible.length];used.push(q.id);out.push({...q,round:r});}}return out}
+function publicProfile(p){return {id:p.id,name:p.name,xp:p.xp,level:levelFor(p.xp),wins:p.wins,losses:p.losses,games:p.games,streak:p.streak,bestStreak:p.bestStreak,badges:p.badges,missions:p.missions}}
 function send(ws,msg){if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(msg))}
-function publicState(room,player){
-  const q=player.round<25?room.questions[Math.floor(player.round/5)][player.round%5]:null;
-  return {type:'state',players:room.players.map((p,i)=>({id:p.id,name:p.name,score:p.score,streak:p.streak,answered:!!p.answered,index:i,round:p.round,finished:p.round>=25})),round:player.round,total:25,question:q?{title:q.title,badge:q.badge,prompt:q.prompt,opts:q.opts}:null,status:room.players.length<2?'waiting':(player.round>=25?'finished':'playing'),deadline:player.deadline};
-}
-function sendState(room,player){send(player.ws,publicState(room,player))}
-function cancelTimer(player){if(player.timer)clearTimeout(player.timer);player.timer=null}
-function nextQuestion(room,player){
-  cancelTimer(player);
-  player.answered=false;
-  player.round++;
-  if(player.round<25) startTimer(room,player);
-  sendState(room,player);
-  if(room.players.every(p=>p.round>=25)){
-    broadcast(room,{type:'finished',players:room.players.map(p=>({name:p.name,score:p.score,streak:p.streak}))});
-  }
-}
-function startTimer(room,player){
-  player.deadline=Date.now()+15000;
-  cancelTimer(player);
-  player.timer=setTimeout(()=>{
-    if(player.answered||player.round>=25)return;
-    player.answered=true;
-    send(player.ws,{type:'answerResult',correct:false,points:0,timeout:true});
-    player.streak=0;
-    nextQuestion(room,player);
-  },15000);
-}
 function broadcast(room,msg){room.players.forEach(p=>send(p.ws,msg))}
-function cleanup(room){room.players.forEach(cancelTimer);rooms.delete(room.code)}
-const server=http.createServer((req,res)=>{
-  let p=req.url.split('?')[0];
-  if(p==='/health'){res.writeHead(200,{'content-type':'application/json'});return res.end(JSON.stringify({ok:true,rooms:rooms.size}))}
-  if(p==='/')p='/index.html';
-  const file=path.join(__dirname,'public',p);
-  fs.readFile(file,(e,data)=>{if(e){res.writeHead(404);return res.end('Not found')}
-    const ext=path.extname(file);const ct=ext==='.html'?'text/html':ext==='.js'?'text/javascript':ext==='.css'?'text/css':'application/octet-stream';
-    res.writeHead(200,{'content-type':ct});res.end(data)
-  })
-});
-const wss=new WebSocket.Server({server});
-wss.on('connection',ws=>{
-  let player=null;
-  ws.on('message',raw=>{
-    let m;try{m=JSON.parse(raw)}catch{return}
-    if(m.type==='create'){
-      const room={code:code(),players:[],questions:makeQuestions()};
-      player={id:Math.random().toString(36).slice(2),name:String(m.name||'Player 1').slice(0,20),score:0,streak:0,answered:false,round:0,deadline:null,timer:null,ws,room};
-      room.players.push(player);rooms.set(room.code,room);
-      send(ws,{type:'created',code:room.code,playerId:player.id});sendState(room,player);return;
-    }
-    if(m.type==='join'){
-      const room=rooms.get(String(m.code||'').toUpperCase());
-      if(!room)return send(ws,{type:'error',message:'Room not found.'});
-      if(room.players.length>=2)return send(ws,{type:'error',message:'Room is full.'});
-      player={id:Math.random().toString(36).slice(2),name:String(m.name||'Player 2').slice(0,20),score:0,streak:0,answered:false,round:0,deadline:null,timer:null,ws,room};
-      room.players.push(player);
-      room.players.forEach(p=>{if(p.round<25&&!p.timer)startTimer(room,p);sendState(room,p)});
-      return;
-    }
-    if(!player)return;
-    if(m.type==='answer'){
-      const room=player.room;
-      if(!room||!room.players.includes(player)||room.players.length!==2||player.answered||player.round>=25)return;
-      const q=room.questions[Math.floor(player.round/5)][player.round%5];
-      player.answered=true;cancelTimer(player);
-      const n=Number(m.answer);const correct=n===q.ans;
-      let pts=0;
-      if(correct){pts=100+player.streak*25;player.score+=pts;player.streak++}else player.streak=0;
-      send(player.ws,{type:'answerResult',correct,points:pts,answer:q.ans});
-      // Advance this player immediately; the opponent progresses independently.
-      nextQuestion(room,player);
-    }
-  });
-  ws.on('close',()=>{
-    if(!player)return;
-    const room=player.room;
-    if(room&&rooms.has(room.code)){
-      cancelTimer(player);room.players=room.players.filter(p=>p!==player);
-      if(room.players.length===0)cleanup(room);
-      else {room.players.forEach(p=>cancelTimer(p));send(room.players[0].ws,{type:'opponentLeft'});sendState(room,room.players[0])}
-    }
-  });
-});
-server.listen(PORT,'0.0.0.0',()=>console.log(`Prompt Master listening on ${PORT}`));
+function cancelTimer(p){if(p.timer)clearTimeout(p.timer);p.timer=null}
+function publicState(room,p){const q=p.index<room.questions.length?room.questions[p.index]:null;return {type:'state',status:room.players.length<2?'waiting':(p.index>=room.questions.length?'finished':'playing'),roomCode:room.code,mode:room.mode,category:room.category,players:room.players.map(x=>({id:x.id,name:x.name,score:x.score,streak:x.streak,index:x.index,finished:x.index>=room.questions.length})),index:p.index,total:room.questions.length,round:Math.floor(p.index/(MODES[room.mode].qPerRound))+1,question:q?{category:q.category,difficulty:q.difficulty,question:q.question,options:q.options}:null,deadline:p.deadline}}
+function sendState(room,p){send(p.ws,publicState(room,p))}
+function startTimer(room,p){cancelTimer(p);if(p.index>=room.questions.length)return;p.deadline=Date.now()+room.time*1000;p.timer=setTimeout(()=>{if(p.answered||p.index>=room.questions.length)return;p.answered=true;p.streak=0;send(p.ws,{type:'answerResult',correct:false,points:0,timeout:true});advance(room,p)},room.time*1000)}
+function advance(room,p){cancelTimer(p);p.answered=false;p.index++;p.deadline=null;if(p.index<room.questions.length)startTimer(room,p);sendState(room,p);if(p.index>=room.questions.length&&room.players.length===1){addProgress(p.profile,p.correctAnswers,true);send(p.ws,{type:'finished',players:[{name:p.name,score:p.score,correct:p.correctAnswers,profile:publicProfile(p.profile)}]});return}if(room.players.length===2&&room.players.every(x=>x.index>=room.questions.length)){const high=Math.max(...room.players.map(y=>y.score));room.players.forEach(x=>addProgress(x.profile,x.correctAnswers,x.score===high));broadcast(room,{type:'finished',players:room.players.map(x=>({name:x.name,score:x.score,correct:x.correctAnswers,profile:publicProfile(x.profile)}))})}}
+function createPlayer(ws,name,profile,room){return {id:uid(),name:String(name||profile.name||'Player').slice(0,20),score:0,streak:0,correctAnswers:0,index:0,answered:false,deadline:null,timer:null,ws,room,profile}}
+function leaderboard(){return Object.values(profiles).sort((a,b)=>b.xp-a.xp).slice(0,20).map((p,i)=>({rank:i+1,...publicProfile(p)}))}
+function serve(req,res){let p=req.url.split('?')[0];if(p==='/health'){res.writeHead(200,{'content-type':'application/json'});return res.end(JSON.stringify({ok:true,rooms:rooms.size,players:Object.keys(profiles).length}))}if(p==='/api/categories'){res.writeHead(200,{'content-type':'application/json'});return res.end(JSON.stringify(CATEGORIES))}if(p==='/api/leaderboard'){res.writeHead(200,{'content-type':'application/json'});return res.end(JSON.stringify(leaderboard()))}if(p==='/')p='/index.html';const safe=path.normalize(p).replace(/^([.][.][/\\])+/, '');const file=path.join(__dirname,'public',safe);fs.readFile(file,(e,data)=>{if(e){res.writeHead(404);return res.end('Not found')}const ext=path.extname(file);const ct=ext==='.html'?'text/html':ext==='.js'?'text/javascript':ext==='.css'?'text/css':ext==='.json'?'application/json':'application/octet-stream';res.writeHead(200,{'content-type':ct});res.end(data)})}
+const server=http.createServer(serve);const wss=new WebSocket.Server({server});
+wss.on('connection',ws=>{let player=null;ws.on('message',raw=>{let m;try{m=JSON.parse(raw)}catch{return}
+ if(m.type==='guest'){const p=profileFor(m.name);player=createPlayer(ws,m.name,p,null);send(ws,{type:'profile',profile:publicProfile(p)});return}
+ if(m.type==='login'){const p=profiles[String(m.id||'')];if(!p)return send(ws,{type:'error',message:'Account not found.'});player=createPlayer(ws,p.name,p,null);send(ws,{type:'profile',profile:publicProfile(p)});return}
+ if(m.type==='register'){const name=String(m.name||'').trim();if(name.length<2)return send(ws,{type:'error',message:'Enter a name of at least 2 characters.'});const p=profileFor(name);player=createPlayer(ws,name,p,null);send(ws,{type:'registered',profile:publicProfile(p)});return}
+ if(m.type==='leaderboard')return send(ws,{type:'leaderboard',rows:leaderboard()});
+ if(m.type==='create'){const profile=player?.profile||profileFor(m.name);player=createPlayer(ws,m.name,profile,null);const mode=MODES[m.mode]?m.mode:'Classic Duel';const category=CATEGORIES.includes(m.category)?m.category:'Mixed Quiz';const room={code:code(),players:[],questions:makeQuestions(category,mode),mode,category,time:MODES[mode].time};player.room=room;room.players.push(player);rooms.set(room.code,room);send(ws,{type:'created',code:room.code,playerId:player.id,mode,category,time:room.time});sendState(room,player);return}
+ if(m.type==='matchmake'){const profile=player?.profile||profileFor(m.name);player=createPlayer(ws,m.name,profile,null);const found=queue.findIndex(x=>x.mode===m.mode&&x.category===m.category&&x.ws.readyState===WebSocket.OPEN);if(found>=0){const other=queue.splice(found,1)[0];const mode=MODES[m.mode]?m.mode:'Classic Duel';const category=CATEGORIES.includes(m.category)?m.category:'Mixed Quiz';const room={code:code(),players:[],questions:makeQuestions(category,mode),mode,category,time:MODES[mode].time};other.room=room;player.room=room;room.players.push(other,player);rooms.set(room.code,room);room.players.forEach(x=>{send(x.ws,{type:'matched',code:room.code,mode,category});startTimer(room,x);sendState(room,x)});return}queue.push({ws,mode:m.mode||'Classic Duel',category:m.category||'Mixed Quiz'});send(ws,{type:'queued',message:'Looking for an opponent…'});return}
+ if(m.type==='join'){const room=rooms.get(String(m.code||'').toUpperCase());if(!room)return send(ws,{type:'error',message:'Room not found.'});if(room.players.length>=2)return send(ws,{type:'error',message:'Room is full.'});const profile=player?.profile||profileFor(m.name);player=createPlayer(ws,m.name,profile,room);room.players.push(player);room.players.forEach(x=>{if(room.players.length===2&&x.index<room.questions.length)startTimer(room,x);sendState(room,x)});return}
+ if(!player)return send(ws,{type:'error',message:'Start as a guest or create an account first.'});
+ if(m.type==='answer'){const room=player.room;if(!room||room.players.length!==2||player.answered||player.index>=room.questions.length)return;const q=room.questions[player.index];const n=Number(m.answer);player.answered=true;cancelTimer(player);const correct=n===q.answer;let pts=0;if(correct){pts=100+player.streak*25+Math.max(0,Math.ceil(((player.deadline-Date.now())/1000))*2);player.score+=pts;player.streak++;player.correctAnswers++}else player.streak=0;send(player.ws,{type:'answerResult',correct,points:pts,answer:q.answer,explanation:q.explanation||''});advance(room,player);return}
+ if(m.type==='solo'){const profile=player?.profile||profileFor(m.name);player=createPlayer(ws,m.name,profile,null);const mode='Solo Practice';const category=CATEGORIES.includes(m.category)?m.category:'Mixed Quiz';const room={code:'SOLO',players:[player],questions:makeQuestions(category,mode),mode,category,time:MODES[mode].time};player.room=room;startTimer(room,player);send(ws,{type:'soloStarted',mode,category});sendState(room,player);return}
+ if(m.type==='profile'){return send(ws,{type:'profile',profile:publicProfile(player.profile)})}
+ });ws.on('close',()=>{if(player?.room){const room=player.room;cancelTimer(player);room.players=room.players.filter(x=>x!==player);if(room.code!=='SOLO'&&room.players.length){send(room.players[0].ws,{type:'opponentLeft'});sendState(room,room.players[0])}else if(room.code!=='SOLO')rooms.delete(room.code)}for(let i=queue.length-1;i>=0;i--)if(queue[i].ws===ws)queue.splice(i,1)})});
+server.listen(PORT,'0.0.0.0',()=>console.log('Prompt Master platform listening on '+PORT));
